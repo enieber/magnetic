@@ -1,0 +1,9 @@
+---
+source: tests/requests/products.rs
+assertion_line: 26
+expression: "(add_product_request.status_code(), add_product_request.text())"
+---
+(
+    200,
+    "{\"created_at\":\"DATE\",\"updated_at\":\"DATE\",\"id\":ID,\"cpu\":\"1\",\"memory\":\"512mb\",\"storage_size\":\"5gb\",\"storage_type\":\"hdd\",\"name\":\"Dev\"}",
+)
