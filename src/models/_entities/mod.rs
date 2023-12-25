@@ -4,4 +4,5 @@ pub mod prelude;
 
 pub mod notes;
 pub mod products;
+pub mod sales;
 pub mod users;

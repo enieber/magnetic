@@ -2,4 +2,5 @@
 
 pub use super::notes::Entity as Notes;
 pub use super::products::Entity as Products;
+pub use super::sales::Entity as Sales;
 pub use super::users::Entity as Users;

@@ -43,8 +43,9 @@ impl Hooks for App {
 
     fn routes() -> AppRoutes {
         AppRoutes::with_default_routes()
-            .add_route(controllers::products::routes())
             .prefix("/api")
+            .add_route(controllers::products::routes())
+            .add_route(controllers::sales::routes())
             .add_route(controllers::notes::routes())
             .add_route(controllers::auth::routes())
             .add_route(controllers::user::routes())
@@ -70,3 +71,4 @@ impl Hooks for App {
         Ok(())
     }
 }
+
