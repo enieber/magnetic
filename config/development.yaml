@@ -18,10 +18,21 @@ logger:
 server:
   # Port on which the server will listen. the server binding is 0.0.0.0:{PORT}
   port: 3000
+  token_id: {{ get_env(name="TOKEN_ID", default="token") }}
+  token_secret: {{ get_env(name="TOKEN_SECRET", default="secret") }}
+  api_url: {{ get_env(name="API_URL", default="localhost") }}
+
   # The UI hostname or IP address that mailers will point to.
   host: http://localhost
   # Out of the box middleware configuration. to disable middleware you can changed the `enable` field to `false` of comment the middleware block
   middlewares:
+    static:
+      enable: true
+      must_exist: true
+      folder:
+        uri: "/"
+        path: "frontend/dist"
+      fallback: "frontend/dist/index.html"
     # Allows to limit the payload size request. payload that bigger than this file will blocked the request.
     limit_payload:
       # Enable/Disable the middleware.
@@ -87,7 +98,7 @@ database:
   # When enabled, the sql query will be logged.
   enable_logging: false
   # Set the timeout duration when acquiring a connection.
-  connect_timeout: 500
+  connect_timeout: 5000
   # Set the idle duration before closing a connection.
   idle_timeout: 500
   # Minimum number of connections for a pool.
