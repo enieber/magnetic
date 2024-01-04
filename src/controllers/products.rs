@@ -8,9 +8,9 @@ use crate::models::_entities::products::{ActiveModel, Entity, Model};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Params {
-    pub cpu: String,
-    pub memory: String,
-    pub storage_size: String,
+    pub cpu: i32,
+    pub memory: i32,
+    pub storage_size: i32,
     pub storage_type: String,
     pub name: String,
     }

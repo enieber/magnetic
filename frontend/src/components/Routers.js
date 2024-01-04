@@ -135,7 +135,7 @@ export default function App() {
                  color={sidenavColor}
                  brand={brand}
                  brandName="PopSolutions"
-                 routes={routes}
+                 routes={authedRoutes}
                  onMouseEnter={handleOnMouseEnter}
                  onMouseLeave={handleOnMouseLeave}
               />

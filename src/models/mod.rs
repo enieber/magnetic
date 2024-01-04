@@ -3,3 +3,4 @@ pub mod notes;
 pub mod users;
 pub mod products;
 pub mod sales;
+pub mod resources;

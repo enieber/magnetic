@@ -13,9 +13,9 @@ impl MigrationTrait for Migration {
             .create_table(
                 table_auto(Products::Table)
                     .col(pk_auto(Products::Id).borrow_mut())
-                    .col(string(Products::Cpu).borrow_mut())
-                    .col(string(Products::Memory).borrow_mut())
-                    .col(string(Products::StorageSize).borrow_mut())
+                    .col(integer(Products::Cpu).borrow_mut())
+                    .col(integer(Products::Memory).borrow_mut())
+                    .col(integer(Products::StorageSize).borrow_mut())
                     .col(string(Products::StorageType).borrow_mut())
                     .col(string(Products::Name).borrow_mut())
                     .to_owned(),
