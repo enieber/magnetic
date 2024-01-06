@@ -209,99 +209,14 @@ struct ResourceItem {
     vmid: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
-enum ResourceType {
-    Qemu {
-        cpu: f64,
-        diskwrite: i64,
-        node: String,
-        netin: i64,
-        tags: String,
-        maxcpu: i32,
-        maxdisk: i64,
-        uptime: i64,
-        mem: i64,
-        id: String,
-        diskread: i64,
-        maxmem: i64,
-        netout: i64,
-        template: i64,
-        #[allow(dead_code)]
-        type_field: String,
-        vmid: i32,
-        disk: i64,
-        status: String,
-        name: String,
-    },
-    Lxc {
-        diskread: i64,
-        maxmem: i64,
-        netout: i64,
-        template: i64,
-        vmid: i32,
-        #[allow(dead_code)]
-        type_field: String,
-        status: String,
-        name: String,
-        disk: i64,
-        node: String,
-        diskwrite: i64,
-        cpu: f64,
-        netin: i64,
-        tags: String,
-        maxcpu: i32,
-        maxdisk: i64,
-        uptime: i64,
-        mem: i64,
-        id: String,
-    },
-    Node {
-        #[allow(dead_code)]
-        type_field: String,
-        status: String,
-        disk: i64,
-        maxmem: i64,
-        maxdisk: i64,
-        uptime: i64,
-        mem: i64,
-        id: String,
-        node: String,
-        cpu: f64,
-        cgroup_mode: i32,
-        level: String,
-        maxcpu: i32,
-    },
-    Storage {
-        #[allow(dead_code)]
-        type_field: String,
-        maxdisk: i64,
-        plugintype: String,
-        status: String,
-        disk: i64,
-        id: String,
-        node: String,
-        shared: i64,
-        content: String,
-        storage: String,
-    },
-    Sdn {
-        id: String,
-        sdn: String,
-        status: String,
-        node: String,
-        #[allow(dead_code)]
-        type_field: String,
-    },
-}
-
 #[derive(Debug, serde::Deserialize)]
-struct ResponseClusterResource {
-    data: Vec<ResourceType>,
+struct ResponseNextId {
+    data: String,
 }
 
-async fn get_resource() -> std::result::Result<Response, reqwest::Error> {
+async fn next_vmid() -> String {
     let proxmox_api = config_proxmox();
-    let url = format!("{}/cluster/resources", proxmox_api.base_api);
+    let url = format!("{}/cluster/nextid", proxmox_api.base_api);
 
     match proxmox_api.client {
         Some(client) => {
@@ -311,44 +226,25 @@ async fn get_resource() -> std::result::Result<Response, reqwest::Error> {
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .send()
                 .await;
-            return res;
-        }
-        None => panic!("Not found client"),
-    }
-}
 
-async fn get_last_vmid() -> ResourceItem {
-    let res = get_resource().await;
-    match res {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<ResponseClusterResource>().await {
-                    Ok(body) => {
-                        tracing::info!("response-body: {:?}", body);
-                        let max_vmid = body
-                            .data
-                            .iter()
-                            .filter_map(|item| match item {
-                                ResourceType::Qemu { vmid, .. } => Some(vmid),
-                                ResourceType::Lxc { vmid, .. } => Some(vmid),
-                                _ => None,
-                            })
-                            .filter_map(|vmid| Some(vmid))
-                            .max();
-                        return ResourceItem {
-                            vmid: max_vmid.copied(),
-                        };
-                    }
-                    Err(_) => {
-                        println!("Hm, the response didn't match the shape we expected.");
-                        return ResourceItem { vmid: Some(109) };
+            match res {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ResponseNextId>().await {
+                            Ok(body) => {
+                                tracing::info!("response-body: {:?}", body);
+                                return body.data;
+                            }
+                            Err(_) => panic!("Not match pattern"),
+                        }
+                    } else {
+                        panic!("Not connect ok resource: {}", response.status())
                     }
                 }
-            } else {
-                panic!("Not connect ok resource: {}", response.status())
+                Err(_) => panic!("Not match pattern"),
             }
         }
-        Err(_) => ResourceItem { vmid: None },
+        None => panic!("Not found client"),
     }
 }
 
@@ -388,15 +284,7 @@ async fn create_lxc(params: &Resource, password: String, ssh_keys: String) {
     let proxmox_api = config_proxmox();
     let node_name = "data";
     let lxc_url = format!("{}/nodes/{}/lxc", proxmox_api.base_api, node_name);
-    let resource_vmid = get_last_vmid().await;
-    tracing::info!("resource_vmid: {:?}", resource_vmid.vmid);
-    let vmid = if resource_vmid.vmid.is_some() {
-        let mut next_vmid = resource_vmid.vmid.unwrap();
-        next_vmid = next_vmid + 1;
-        next_vmid.to_string()
-    } else {
-        String::from("100")
-    };
+    let vmid = next_vmid().await;
     let configs = LxcConfig {
         vmid,
         space: params.space.clone(),
