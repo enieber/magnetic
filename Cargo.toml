@@ -27,12 +27,12 @@ sea-orm = { version = "0.12.4", features = [
   "macros",
 ] }
 
+reqwest = { version = "0.11.23", features = ["json"] }
+
 axum = "0.7.1"
 include_dir = "0.7"
 uuid = { version = "1.6.0", features = ["v4"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
-reqwest = "0.11.23"
-
 [[bin]]
 name = "mag-cli"
 path = "src/bin/main.rs"
