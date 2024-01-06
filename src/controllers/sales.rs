@@ -2,6 +2,8 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 
+use std::str::FromStr;
+
 use crate::models::_entities::products::Entity as ProductEntity;
 use crate::models::_entities::resources::{
     ActiveModel as ResourceActiveModel, Entity as ResourceEntity, Model as ResourceModel,
@@ -10,6 +12,7 @@ use crate::models::_entities::sales::{ActiveModel, Entity, Model};
 use crate::models::_entities::users::Entity as UsersEntity;
 use loco_rs::prelude::*;
 use random_word::Lang;
+use reqwest::{header, Client, Response};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,7 +137,7 @@ pub async fn update(
                                 ..Default::default()
                             };
                             model.update(&mut resource);
-                            let resource = resource.insert(&ctx.db).await?;
+                            let _resource = resource.insert(&ctx.db).await?;
 
                             let _ = self::create_lxc(
                                 &model,
@@ -162,57 +165,273 @@ pub async fn update(
     }
 }
 
-async fn create_lxc(params: &Resource, password: String, ssh_keys: String) {
+struct ProxMoxApi {
+    pub base_api: String,
+    pub client: Option<Client>,
+    pub header_token_value: String,
+    pub header_token_key: String,
+}
+
+fn config_proxmox() -> ProxMoxApi {
     let token_id = "bot-admin@pve!maglev";
     let token_secret = "ca1413cf-42aa-474c-95aa-84643dd77580";
-    let base_api = "https://10.10.1.2:8006/api2/json";
-    let node_name = "data";
-    let lxc_url = format!("{}/nodes/{}/lxc", base_api, node_name);
-
-    let rootfs = format!("local-lvm:{}", &params.space);
-    let payload = LxcPayload {
-        ostemplate: String::from("local:vztmpl/debian-11-standard_11.7-1_amd64.tar.zst"),
-        vmid: String::from("107"),
-        hostname: params.hostname.clone(),
-        password: password,
-        ssh_public_keys: ssh_keys,
-        memory: params.memory.to_string(),
-        rootfs,
-        cores: params.core.to_string(),
-        swap: String::from("0"),
-        net0: String::from(
-            "name=eth0,bridge=vmbr0,firewall=1,ip=10.10.1.20/24,gw=10.10.1.1,ip6=dhcp",
-        ),
-        start: true,
-    };
-    let authorization = format!("PVEAPIToken={}={}", &token_id, &token_secret);
+    let base_api = String::from("https://10.10.1.2:8006/api2/json");
+    let token = format!("{}={}", &token_id, &token_secret);
+    let name_token = String::from("PVEAPIToken");
+    let header_token_key = String::from("Authorization");
+    let header_token_value = format!("{}={}", name_token, token);
 
     let client_req = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build();
-    let json_string = serde_json::to_string(&payload).expect("Failed to serialize");
-    println!("data {} ", json_string);
+
     match client_req {
         Ok(client) => {
+            return ProxMoxApi {
+                base_api,
+                client: Some(client),
+                header_token_key,
+                header_token_value,
+            };
+        }
+        Err(_) => {
+            return ProxMoxApi {
+                base_api,
+                client: None,
+                header_token_key,
+                header_token_value,
+            };
+        }
+    }
+}
+
+struct ResourceItem {
+    vmid: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+enum ResourceType {
+    Qemu {
+        cpu: f64,
+        diskwrite: i64,
+        node: String,
+        netin: i64,
+        tags: String,
+        maxcpu: i32,
+        maxdisk: i64,
+        uptime: i64,
+        mem: i64,
+        id: String,
+        diskread: i64,
+        maxmem: i64,
+        netout: i64,
+        template: i64,
+        #[allow(dead_code)]
+        type_field: String,
+        vmid: i32,
+        disk: i64,
+        status: String,
+        name: String,
+    },
+    Lxc {
+        diskread: i64,
+        maxmem: i64,
+        netout: i64,
+        template: i64,
+        vmid: i32,
+        #[allow(dead_code)]
+        type_field: String,
+        status: String,
+        name: String,
+        disk: i64,
+        node: String,
+        diskwrite: i64,
+        cpu: f64,
+        netin: i64,
+        tags: String,
+        maxcpu: i32,
+        maxdisk: i64,
+        uptime: i64,
+        mem: i64,
+        id: String,
+    },
+    Node {
+        #[allow(dead_code)]
+        type_field: String,
+        status: String,
+        disk: i64,
+        maxmem: i64,
+        maxdisk: i64,
+        uptime: i64,
+        mem: i64,
+        id: String,
+        node: String,
+        cpu: f64,
+        cgroup_mode: i32,
+        level: String,
+        maxcpu: i32,
+    },
+    Storage {
+        #[allow(dead_code)]
+        type_field: String,
+        maxdisk: i64,
+        plugintype: String,
+        status: String,
+        disk: i64,
+        id: String,
+        node: String,
+        shared: i64,
+        content: String,
+        storage: String,
+    },
+    Sdn {
+        id: String,
+        sdn: String,
+        status: String,
+        node: String,
+        #[allow(dead_code)]
+        type_field: String,
+    },
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ResponseClusterResource {
+    data: Vec<ResourceType>,
+}
+
+async fn get_resource() -> std::result::Result<Response, reqwest::Error> {
+    let proxmox_api = config_proxmox();
+    let url = format!("{}/cluster/resources", proxmox_api.base_api);
+
+    match proxmox_api.client {
+        Some(client) => {
+            let res = client
+                .get(url)
+                .header(proxmox_api.header_token_key, proxmox_api.header_token_value)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .send()
+                .await;
+            return res;
+        }
+        None => panic!("Not found client"),
+    }
+}
+
+async fn get_last_vmid() -> ResourceItem {
+    let res = get_resource().await;
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<ResponseClusterResource>().await {
+                    Ok(body) => {
+                        tracing::info!("response-body: {:?}", body);
+                        let max_vmid = body
+                            .data
+                            .iter()
+                            .filter_map(|item| match item {
+                                ResourceType::Qemu { vmid, .. } => Some(vmid),
+                                ResourceType::Lxc { vmid, .. } => Some(vmid),
+                                _ => None,
+                            })
+                            .filter_map(|vmid| Some(vmid))
+                            .max();
+                        return ResourceItem {
+                            vmid: max_vmid.copied(),
+                        };
+                    }
+                    Err(_) => {
+                        println!("Hm, the response didn't match the shape we expected.");
+                        return ResourceItem { vmid: Some(109) };
+                    }
+                }
+            } else {
+                panic!("Not connect ok resource: {}", response.status())
+            }
+        }
+        Err(_) => ResourceItem { vmid: None },
+    }
+}
+
+struct LxcConfig {
+    hostname: String,
+    space: i32,
+    ssh_keys: String,
+    password: String,
+    vmid: String,
+    memory: i32,
+    core: i32,
+}
+
+fn config_lxc(configs: LxcConfig) -> LxcPayload {
+    let net0 =
+        String::from("name=eth0,bridge=vmbr0,firewall=1,ip=10.10.1.20/24,gw=10.10.1.1,ip6=dhcp");
+    let rootfs = format!("local-lvm:{}", &configs.space);
+    let cores = configs.core.to_string();
+    let memory = configs.memory.to_string();
+    let payload = LxcPayload {
+        ostemplate: String::from("local:vztmpl/debian-11-standard_11.7-1_amd64.tar.zst"),
+        vmid: configs.vmid,
+        hostname: configs.hostname,
+        password: configs.password,
+        ssh_public_keys: configs.ssh_keys,
+        memory,
+        rootfs,
+        cores,
+        swap: String::from("0"),
+        net0,
+        start: true,
+    };
+    payload
+}
+
+async fn create_lxc(params: &Resource, password: String, ssh_keys: String) {
+    let proxmox_api = config_proxmox();
+    let node_name = "data";
+    let lxc_url = format!("{}/nodes/{}/lxc", proxmox_api.base_api, node_name);
+    let resource_vmid = get_last_vmid().await;
+    tracing::info!("resource_vmid: {:?}", resource_vmid.vmid);
+    let vmid = if resource_vmid.vmid.is_some() {
+        let mut next_vmid = resource_vmid.vmid.unwrap();
+        next_vmid = next_vmid + 1;
+        next_vmid.to_string()
+    } else {
+        String::from("100")
+    };
+    let configs = LxcConfig {
+        vmid,
+        space: params.space.clone(),
+        hostname: params.hostname.clone(),
+        core: params.core.clone(),
+        memory: params.memory.clone(),
+        password,
+        ssh_keys,
+    };
+    let payload = config_lxc(configs);
+    let json_string = serde_json::to_string(&payload).expect("Failed to serialize");
+    tracing::info!("json body {}", json_string);
+    match proxmox_api.client {
+        Some(client) => {
             let res = client
                 .post(lxc_url)
-                .header("Authorization", &authorization)
+                .header(proxmox_api.header_token_key, proxmox_api.header_token_value)
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(json_string)
                 .send()
                 .await;
             match res {
                 Ok(response) => {
-                    println!("body = {:?}", response);
+                    if response.status().is_success() {
+                        tracing::info!("resource created");
+                    } else {
+                        tracing::error!("error to create resource: {:?}", response);
+                    }
                 }
                 Err(err) => {
-                    println!("fail error: {:?}", err);
+                    tracing::error!("error in request: {:?}", err);
                 }
             }
         }
-        Err(err) => {
-            println!("fail error: {:?}", err);
-        }
+        None => println!("Not found client"),
     }
 }
 
